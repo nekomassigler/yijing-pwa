@@ -250,6 +250,25 @@ test("invalid imports are fully rejected before any localStorage change", async 
   }
 });
 
+test("raw JSON duplicate detection decodes keys and does not inspect string contents", () => {
+  const escapedDuplicate =
+    '{"schemaVersion":1,"selected":"標準","templates":{"標準":"{theme}","\\u6a19\\u6e96":"{primary}"}}';
+  assert.throws(
+    () => prepareTemplateImport(escapedDuplicate),
+    TemplateValidationError,
+  );
+
+  const apparentDuplicateInsideBody = JSON.stringify({
+    schemaVersion: 1,
+    selected: "標準",
+    templates: {
+      "標準": '本文内の文字列: "標準":"A", "標準":"B" {theme}',
+    },
+  });
+  const prepared = prepareTemplateImport(apparentDuplicateInsideBody);
+  assert.equal(prepared.summary.templateCount, 1);
+});
+
 test("corrupt reads and SecurityError or QuotaExceededError never overwrite state", async () => {
   const corruptStorage = new MemoryStorage({
     [PROMPT_TEMPLATE_STORAGE_KEY]: "{broken",

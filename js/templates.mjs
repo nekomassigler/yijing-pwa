@@ -245,6 +245,7 @@ function parseTemplateJson(text, options = {}) {
     throw new TemplateValidationError("JSONは文字列で指定してください。");
   }
 
+  assertNoDuplicateJsonKeys(text);
   let parsed;
   try {
     parsed = JSON.parse(text);
@@ -253,7 +254,6 @@ function parseTemplateJson(text, options = {}) {
       cause: error,
     });
   }
-  assertNoDuplicateJsonKeys(text);
   return validateTemplatePayload(parsed, options);
 }
 
@@ -448,7 +448,7 @@ export class TemplateRepository {
     return this.snapshot();
   }
 
-  addTemplate(name, body) {
+  addTemplate(name, body, { select = false } = {}) {
     const normalizedName = normalizeName(name);
     if (hasOwn(this._payload.templates, normalizedName)) {
       throw new TemplateOperationError("同名テンプレートは追加できません。");
@@ -457,7 +457,11 @@ export class TemplateRepository {
       ...Object.entries(this._payload.templates),
       [normalizedName, normalizeBody(body, normalizedName)],
     ]);
-    return this._commit({ ...this._payload, templates });
+    return this._commit({
+      ...this._payload,
+      selected: select ? normalizedName : this._payload.selected,
+      templates,
+    });
   }
 
   renameTemplate(currentName, newName) {
