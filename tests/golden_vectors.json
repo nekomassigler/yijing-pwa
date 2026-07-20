@@ -2388,7 +2388,7 @@
         1
       ],
       "changedId": 27,
-      "changed": "雷為震"
+      "changed": "震為雷"
     },
     {
       "name": "hexagram_27",
@@ -2421,7 +2421,7 @@
         1
       ],
       "primaryId": 27,
-      "primary": "雷為震",
+      "primary": "震為雷",
       "changing_idx": 0,
       "var_kanji": "上爻",
       "changedLines": [
@@ -7160,7 +7160,7 @@
         1
       ],
       "changedId": 27,
-      "changed": "雷為震"
+      "changed": "震為雷"
     },
     {
       "name": "hexagram_11_change_3",
@@ -9365,7 +9365,7 @@
         1
       ],
       "changedId": 27,
-      "changed": "雷為震"
+      "changed": "震為雷"
     },
     {
       "name": "hexagram_19_change_4",
@@ -11075,7 +11075,7 @@
         1
       ],
       "changedId": 27,
-      "changed": "雷為震"
+      "changed": "震為雷"
     },
     {
       "name": "hexagram_26_change_0",
@@ -11120,7 +11120,7 @@
         1
       ],
       "changedId": 27,
-      "changed": "雷為震"
+      "changed": "震為雷"
     },
     {
       "name": "hexagram_26_change_1",
@@ -11378,7 +11378,7 @@
         1
       ],
       "primaryId": 27,
-      "primary": "雷為震",
+      "primary": "震為雷",
       "changing_idx": 0,
       "var_kanji": "上爻",
       "changedLines": [
@@ -11423,7 +11423,7 @@
         1
       ],
       "primaryId": 27,
-      "primary": "雷為震",
+      "primary": "震為雷",
       "changing_idx": 1,
       "var_kanji": "初爻",
       "changedLines": [
@@ -11468,7 +11468,7 @@
         1
       ],
       "primaryId": 27,
-      "primary": "雷為震",
+      "primary": "震為雷",
       "changing_idx": 2,
       "var_kanji": "二爻",
       "changedLines": [
@@ -11513,7 +11513,7 @@
         1
       ],
       "primaryId": 27,
-      "primary": "雷為震",
+      "primary": "震為雷",
       "changing_idx": 3,
       "var_kanji": "三爻",
       "changedLines": [
@@ -11558,7 +11558,7 @@
         1
       ],
       "primaryId": 27,
-      "primary": "雷為震",
+      "primary": "震為雷",
       "changing_idx": 4,
       "var_kanji": "四爻",
       "changedLines": [
@@ -11603,7 +11603,7 @@
         1
       ],
       "primaryId": 27,
-      "primary": "雷為震",
+      "primary": "震為雷",
       "changing_idx": 5,
       "var_kanji": "五爻",
       "changedLines": [
@@ -12650,7 +12650,7 @@
         1
       ],
       "changedId": 27,
-      "changed": "雷為震"
+      "changed": "震為雷"
     },
     {
       "name": "hexagram_31_change_5",
@@ -20075,7 +20075,7 @@
         1
       ],
       "changedId": 27,
-      "changed": "雷為震"
+      "changed": "震為雷"
     },
     {
       "name": "hexagram_59_change_2",
@@ -21924,11 +21924,11 @@
     },
     {
       "id": 27,
-      "name": "雷為震",
-      "descriptionKey": "雷為震",
-      "yaoKey": "雷為震",
+      "name": "震為雷",
+      "descriptionKey": "震為雷",
+      "yaoKey": "震為雷",
       "hasDescription": true,
-      "hasYao": false
+      "hasYao": true
     },
     {
       "id": 28,
