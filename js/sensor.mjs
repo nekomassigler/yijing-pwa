@@ -47,17 +47,52 @@ function magnitude(values, { requireAll = false } = {}) {
   );
 }
 
+function largerFinite(current, candidate) {
+  if (candidate === null) return current;
+  return current === null ? candidate : Math.max(current, candidate);
+}
+
+export function measureMotionEvent(event) {
+  const values = readMotionValues(event);
+  const gravityMagnitude = magnitude(
+    [values.gravityX, values.gravityY, values.gravityZ],
+    { requireAll: true },
+  );
+  return {
+    accelerationMagnitude: magnitude([
+      values.accelerationX,
+      values.accelerationY,
+      values.accelerationZ,
+    ]),
+    gravityDeviation:
+      gravityMagnitude === null
+        ? null
+        : Math.abs(gravityMagnitude - STANDARD_GRAVITY),
+    rotationMagnitude: magnitude([
+      values.rotationAlpha,
+      values.rotationBeta,
+      values.rotationGamma,
+    ]),
+  };
+}
+
 export class MotionInputError extends Error {
   constructor(
     code,
     message,
-    { fallbackAllowed = false, retryRecommended = false, cause } = {},
+    {
+      fallbackAllowed = false,
+      retryRecommended = false,
+      measurement = null,
+      cause,
+    } = {},
   ) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = "MotionInputError";
     this.code = code;
     this.fallbackAllowed = fallbackAllowed;
     this.retryRecommended = retryRecommended;
+    this.measurement = measurement;
   }
 }
 
@@ -83,26 +118,15 @@ export function isMotionTrigger(event, {
   motionThreshold = SENSOR_MOTION_THRESHOLD,
   rotationThreshold = SENSOR_ROTATION_THRESHOLD,
 } = {}) {
-  const values = readMotionValues(event);
-  const accelerationMagnitude = magnitude([
-    values.accelerationX,
-    values.accelerationY,
-    values.accelerationZ,
-  ]);
-  const gravityMagnitude = magnitude(
-    [values.gravityX, values.gravityY, values.gravityZ],
-    { requireAll: true },
-  );
-  const rotationMagnitude = magnitude([
-    values.rotationAlpha,
-    values.rotationBeta,
-    values.rotationGamma,
-  ]);
+  const {
+    accelerationMagnitude,
+    gravityDeviation,
+    rotationMagnitude,
+  } = measureMotionEvent(event);
 
   return (
     (accelerationMagnitude !== null && accelerationMagnitude >= motionThreshold) ||
-    (gravityMagnitude !== null &&
-      Math.abs(gravityMagnitude - STANDARD_GRAVITY) >= motionThreshold) ||
+    (gravityDeviation !== null && gravityDeviation >= motionThreshold) ||
     (rotationMagnitude !== null && rotationMagnitude >= rotationThreshold)
   );
 }
@@ -151,6 +175,38 @@ export class MotionCaptureSession {
     this.usableEventCount = 0;
     this.startTimeStamp = null;
     this.previousTimeStamp = null;
+    this.lastElapsed = null;
+    this.maxAccelerationMagnitude = null;
+    this.maxGravityDeviation = null;
+    this.maxRotationMagnitude = null;
+  }
+
+  observe(event) {
+    const metrics = measureMotionEvent(event);
+    this.maxAccelerationMagnitude = largerFinite(
+      this.maxAccelerationMagnitude,
+      metrics.accelerationMagnitude,
+    );
+    this.maxGravityDeviation = largerFinite(
+      this.maxGravityDeviation,
+      metrics.gravityDeviation,
+    );
+    this.maxRotationMagnitude = largerFinite(
+      this.maxRotationMagnitude,
+      metrics.rotationMagnitude,
+    );
+  }
+
+  measurement(completionReason) {
+    return {
+      inputMode: "motion",
+      sampleCount: this.samples.length,
+      elapsedMs: this.lastElapsed,
+      maxAccelerationMagnitude: this.maxAccelerationMagnitude,
+      maxGravityDeviation: this.maxGravityDeviation,
+      maxRotationMagnitude: this.maxRotationMagnitude,
+      completionReason,
+    };
   }
 
   ingest(event) {
@@ -158,6 +214,7 @@ export class MotionCaptureSession {
       throw new MotionInputError("session-finished", "モーション収集は終了しています。");
     }
     this.eventCount += 1;
+    this.observe(event);
     const usable = hasUsableMotionValues(event);
     if (usable) {
       this.usableEventCount += 1;
@@ -181,8 +238,13 @@ export class MotionCaptureSession {
       this.phase = "collecting-motion";
       this.startTimeStamp = timeStamp;
       this.previousTimeStamp = timeStamp;
+      this.lastElapsed = 0;
       this.samples.push(snapshotMotionEvent(event, 0, timeStamp, timeStamp));
-      return { status: "collecting-motion", started: true };
+      return {
+        status: "collecting-motion",
+        started: true,
+        measurement: this.measurement("collecting"),
+      };
     }
 
     if (!usable) {
@@ -190,6 +252,7 @@ export class MotionCaptureSession {
         status: "collecting-motion",
         started: false,
         sampleCount: this.samples.length,
+        measurement: this.measurement("collecting"),
       };
     }
 
@@ -199,6 +262,7 @@ export class MotionCaptureSession {
         status: "collecting-motion",
         started: false,
         sampleCount: this.samples.length,
+        measurement: this.measurement("collecting"),
       };
     }
     const elapsed = timeStamp - this.startTimeStamp;
@@ -219,6 +283,7 @@ export class MotionCaptureSession {
       ),
     );
     this.previousTimeStamp = timeStamp;
+    this.lastElapsed = elapsed;
     if (
       elapsed >= this.minDurationMs &&
       this.samples.length >= this.minSampleCount
@@ -228,6 +293,7 @@ export class MotionCaptureSession {
         status: "completed",
         samples: this.samples.map((sample) => ({ ...sample })),
         elapsed,
+        measurement: this.measurement("requirements-met"),
       };
     }
     if (elapsed >= this.maxDurationMs) {
@@ -242,6 +308,7 @@ export class MotionCaptureSession {
       started: false,
       sampleCount: this.samples.length,
       elapsed,
+      measurement: this.measurement("collecting"),
     };
   }
 
@@ -250,28 +317,42 @@ export class MotionCaptureSession {
       return new MotionInputError(
         "event-unavailable",
         "モーションイベントを取得できませんでした。",
-        { fallbackAllowed: true },
+        {
+          fallbackAllowed: true,
+          measurement: this.measurement("event-unavailable"),
+        },
       );
     }
     if (this.usableEventCount === 0) {
       return new MotionInputError(
         "values-unavailable",
         "モーションイベントは届きましたが、有効な値を取得できませんでした。",
-        { fallbackAllowed: true },
+        {
+          fallbackAllowed: true,
+          measurement: this.measurement("values-unavailable"),
+        },
       );
     }
     return new MotionInputError(
       "motion-not-detected",
       "有効な動きを検出できませんでした。強く振らず、もう一度軽く振ってください。",
-      { retryRecommended: true },
+      {
+        retryRecommended: true,
+        measurement: this.measurement("motion-not-detected"),
+      },
     );
   }
 
-  captureFailure() {
+  captureFailure(elapsedMs = this.lastElapsed) {
+    const measurement = this.measurement("sample-insufficient");
+    measurement.elapsedMs = elapsedMs;
     return new MotionInputError(
       "sample-insufficient",
       `最大${this.maxDurationMs}msまでに必要なモーションsample数を取得できませんでした。もう一度軽く振ってください。`,
-      { retryRecommended: true },
+      {
+        retryRecommended: true,
+        measurement,
+      },
     );
   }
 }
@@ -367,6 +448,10 @@ export function collectMotionSamples({
       clearMotionSamples(session.samples);
       session.startTimeStamp = null;
       session.previousTimeStamp = null;
+      session.lastElapsed = null;
+      session.maxAccelerationMagnitude = null;
+      session.maxGravityDeviation = null;
+      session.maxRotationMagnitude = null;
     };
     const finishResolve = (samples) => {
       if (settled) return;
@@ -388,8 +473,9 @@ export function collectMotionSamples({
       );
     };
     const handleCaptureTimeout = () => {
-      onState("validating-motion");
-      finishReject(session.captureFailure());
+      const error = session.captureFailure(session.maxDurationMs);
+      onState("validating-motion", error.measurement);
+      finishReject(error);
     };
     const handleMotion = (event) => {
       try {
@@ -400,8 +486,8 @@ export function collectMotionSamples({
             waitTimer = null;
           }
           onState("collecting-motion", {
-            sampleCount: 1,
             minSampleCount: session.minSampleCount,
+            ...outcome.measurement,
           });
           captureTimer = setTimeoutImplementation(
             handleCaptureTimeout,
@@ -409,18 +495,17 @@ export function collectMotionSamples({
           );
         } else if (outcome.status === "collecting-motion") {
           onState("collecting-motion", {
-            sampleCount: outcome.sampleCount,
             minSampleCount: session.minSampleCount,
+            ...outcome.measurement,
           });
         }
         if (outcome.status === "completed") {
           onState("validating-motion", {
-            sampleCount: outcome.samples.length,
-            elapsed: outcome.elapsed,
+            ...outcome.measurement,
           });
           finishResolve(outcome.samples);
         } else if (outcome.status === "retry-required") {
-          onState("retry-required");
+          onState("retry-required", outcome.error.measurement);
           finishReject(outcome.error);
         }
       } catch (error) {

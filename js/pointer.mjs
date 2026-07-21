@@ -84,12 +84,17 @@ function snapshotPointerEvent(
 }
 
 export class PointerInputError extends Error {
-  constructor(code, message, { retryRecommended = true, cause } = {}) {
+  constructor(
+    code,
+    message,
+    { retryRecommended = true, measurement = null, cause } = {},
+  ) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = "PointerInputError";
     this.code = code;
     this.retryRecommended = retryRecommended;
     this.fallbackAllowed = false;
+    this.measurement = measurement;
   }
 }
 
@@ -110,20 +115,41 @@ export class PointerCaptureSession {
     this.moveCount = 0;
     this.totalDistance = 0;
     this.previousPosition = null;
+    this.lastDuration = null;
+  }
+
+  measurement(completionReason) {
+    return {
+      inputMode: "pointer",
+      sampleCount: this.samples.length,
+      durationMs: this.lastDuration,
+      moveCount: this.moveCount,
+      totalDistancePx: this.totalDistance,
+      completionReason,
+    };
   }
 
   ingest(type, event, rect = { left: 0, top: 0 }) {
     if (!(type in EVENT_TYPE_CODES) && type !== "pointercancel") {
-      throw new PointerInputError("pointer-event-invalid", "未対応のPointerイベントです。");
+      throw new PointerInputError("pointer-event-invalid", "未対応のPointerイベントです。", {
+        measurement: this.measurement("pointer-event-invalid"),
+      });
     }
     if (this.phase === "completed" || this.phase === "rejected") {
-      throw new PointerInputError("session-finished", "Pointer入力は終了しています。");
+      throw new PointerInputError("session-finished", "Pointer入力は終了しています。", {
+        measurement: this.measurement("session-finished"),
+      });
     }
     if (type === "pointercancel") {
+      const cancelTimeStamp = finiteOrNull(event?.timeStamp);
+      if (this.startTimeStamp !== null && cancelTimeStamp !== null) {
+        this.lastDuration = cancelTimeStamp - this.startTimeStamp;
+      }
       this.phase = "rejected";
       throw new PointerInputError(
         "pointer-cancelled",
         "Pointer入力が中断されました。もう一度なぞってください。",
+        { measurement: this.measurement("pointer-cancelled") },
       );
     }
 
@@ -133,6 +159,7 @@ export class PointerCaptureSession {
         throw new PointerInputError(
           "multiple-pointers",
           "複数の指が検出されました。1本の指でもう一度なぞってください。",
+          { measurement: this.measurement("multiple-pointers") },
         );
       }
       if (event?.isPrimary === false || !Number.isInteger(event?.pointerId)) {
@@ -140,6 +167,7 @@ export class PointerCaptureSession {
         throw new PointerInputError(
           "multiple-pointers",
           "主Pointer以外は使用できません。1本の指でもう一度なぞってください。",
+          { measurement: this.measurement("multiple-pointers") },
         );
       }
       const startTimeStamp = finiteOrNull(event.timeStamp);
@@ -147,12 +175,14 @@ export class PointerCaptureSession {
         throw new PointerInputError(
           "pointer-values-unavailable",
           "Pointer入力の時刻を取得できませんでした。",
+          { measurement: this.measurement("pointer-values-unavailable") },
         );
       }
       this.phase = "collecting-pointer";
       this.pointerId = event.pointerId;
       this.startTimeStamp = startTimeStamp;
       this.previousTimeStamp = startTimeStamp;
+      this.lastDuration = 0;
       const sample = snapshotPointerEvent(
         type,
         event,
@@ -163,13 +193,17 @@ export class PointerCaptureSession {
       );
       this.samples.push(sample);
       this.previousPosition = { x: sample.x, y: sample.y };
-      return { status: "collecting-pointer", sampleCount: 1 };
+      return {
+        status: "collecting-pointer",
+        measurement: this.measurement("collecting"),
+      };
     }
 
     if (this.phase !== "collecting-pointer") {
       throw new PointerInputError(
         "pointer-sequence-invalid",
         "Pointer入力は専用領域内から開始してください。",
+        { measurement: this.measurement("pointer-sequence-invalid") },
       );
     }
     if (event?.pointerId !== this.pointerId || event?.isPrimary === false) {
@@ -177,6 +211,7 @@ export class PointerCaptureSession {
       throw new PointerInputError(
         "multiple-pointers",
         "複数の指が検出されました。1本の指でもう一度なぞってください。",
+        { measurement: this.measurement("multiple-pointers") },
       );
     }
 
@@ -196,22 +231,23 @@ export class PointerCaptureSession {
     this.previousPosition = { x: sample.x, y: sample.y };
     this.previousTimeStamp = sample.timeStamp;
     this.samples.push(sample);
+    const duration = sample.timeStamp - this.startTimeStamp;
+    this.lastDuration = duration;
 
     if (type === "pointermove") {
       this.moveCount += 1;
       return {
         status: "collecting-pointer",
-        sampleCount: this.samples.length,
-        moveCount: this.moveCount,
+        measurement: this.measurement("collecting"),
       };
     }
 
-    const duration = sample.timeStamp - this.startTimeStamp;
     if (this.moveCount === 0) {
       this.phase = "rejected";
       throw new PointerInputError(
         "pointer-tap-only",
         "単一タップでは入力できません。領域を指で短時間なぞってください。",
+        { measurement: this.measurement("pointer-tap-only") },
       );
     }
     if (
@@ -223,6 +259,7 @@ export class PointerCaptureSession {
       throw new PointerInputError(
         "pointer-input-insufficient",
         "なぞる時間、move件数、または移動量が不足しています。もう一度なぞってください。",
+        { measurement: this.measurement("pointer-input-insufficient") },
       );
     }
     this.phase = "completed";
@@ -232,6 +269,7 @@ export class PointerCaptureSession {
       duration,
       moveCount: this.moveCount,
       totalDistance: this.totalDistance,
+      measurement: this.measurement("requirements-met"),
     };
   }
 }
@@ -281,6 +319,8 @@ export function collectPointerSamples({
       session.previousTimeStamp = null;
       session.previousPosition = null;
       session.totalDistance = 0;
+      session.moveCount = 0;
+      session.lastDuration = null;
     };
     const finishResolve = (samples) => {
       if (settled) return;
@@ -311,13 +351,11 @@ export function collectPointerSamples({
         );
         if (outcome.status === "collecting-pointer") {
           onState("collecting-pointer", {
-            sampleCount: outcome.sampleCount,
-            moveCount: outcome.moveCount ?? 0,
+            ...outcome.measurement,
           });
         } else if (outcome.status === "completed") {
           onState("validating-pointer", {
-            sampleCount: outcome.samples.length,
-            duration: outcome.duration,
+            ...outcome.measurement,
           });
           finishResolve(outcome.samples);
         }

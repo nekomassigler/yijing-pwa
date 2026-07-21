@@ -170,6 +170,15 @@ test("motion collection includes the trigger and completes only after both minim
   assert.equal(completed.status, "completed");
   assert.equal(completed.elapsed, 128);
   assert.equal(completed.samples.length, 4);
+  assert.deepEqual(completed.measurement, {
+    inputMode: "motion",
+    sampleCount: 4,
+    elapsedMs: 128,
+    maxAccelerationMagnitude: 1,
+    maxGravityDeviation: 0,
+    maxRotationMagnitude: 0,
+    completionReason: "requirements-met",
+  });
 });
 
 test("motion collection requires retry when samples are short at 256ms", () => {
@@ -186,6 +195,12 @@ test("motion collection requires retry when samples are short at 256ms", () => {
   assert.equal(outcome.error.code, "sample-insufficient");
   assert.equal(outcome.error.retryRecommended, true);
   assert.equal(outcome.error.fallbackAllowed, false);
+  assert.equal(outcome.error.measurement.sampleCount, 3);
+  assert.equal(outcome.error.measurement.elapsedMs, 256);
+  assert.equal(
+    outcome.error.measurement.completionReason,
+    "sample-insufficient",
+  );
 });
 
 test("motion permission and waiting failures keep fallback and retry reasons distinct", async () => {
@@ -219,6 +234,14 @@ test("motion permission and waiting failures keep fallback and retry reasons dis
   assert.equal(weakMotion.waitingFailure().code, "motion-not-detected");
   assert.equal(weakMotion.waitingFailure().retryRecommended, true);
   assert.equal(weakMotion.waitingFailure().fallbackAllowed, false);
+  assert.equal(
+    weakMotion.waitingFailure().measurement.completionReason,
+    "motion-not-detected",
+  );
+  assert.equal(
+    weakMotion.waitingFailure().measurement.maxAccelerationMagnitude,
+    0,
+  );
 });
 
 test("motion listeners and timers are removed on successful collection", async () => {
@@ -348,7 +371,10 @@ test("pointer rejects a tap, accepts a trace, and uses a deterministic encoding"
   tap.ingest("pointerdown", pointerEvent("pointerdown", 0, 10, 20));
   assert.throws(
     () => tap.ingest("pointerup", pointerEvent("pointerup", 20, 10, 20)),
-    (error) => error.code === "pointer-tap-only",
+    (error) =>
+      error.code === "pointer-tap-only" &&
+      error.measurement.durationMs === 20 &&
+      error.measurement.moveCount === 0,
   );
 
   const trace = new PointerCaptureSession({
@@ -367,6 +393,10 @@ test("pointer rejects a tap, accepts a trace, and uses a deterministic encoding"
   assert.equal(completed.status, "completed");
   assert.equal(completed.moveCount, 3);
   assert.equal(completed.samples.length, 5);
+  assert.equal(completed.measurement.durationMs, 96);
+  assert.equal(completed.measurement.moveCount, 3);
+  assert.equal(completed.measurement.totalDistancePx, 35);
+  assert.equal(completed.measurement.completionReason, "requirements-met");
   const encoded = encodePointerSamples(completed.samples);
   assert.deepEqual(
     encoded,
@@ -392,7 +422,10 @@ test("pointercancel and multiple pointers reject the entire trace", () => {
   cancelled.ingest("pointerdown", pointerEvent("pointerdown", 0, 0, 0));
   assert.throws(
     () => cancelled.ingest("pointercancel", pointerEvent("pointercancel", 10, 1, 1)),
-    (error) => error.code === "pointer-cancelled",
+    (error) =>
+      error.code === "pointer-cancelled" &&
+      error.measurement.durationMs === 10 &&
+      error.measurement.completionReason === "pointer-cancelled",
   );
 
   const mixed = new PointerCaptureSession();

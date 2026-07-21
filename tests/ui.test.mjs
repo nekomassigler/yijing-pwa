@@ -213,7 +213,7 @@ async function createHarness({ withByteSource = false, byteSourceProvider } = {}
   };
 }
 
-test("the static UI is UTF-8, accessible, one-column, and contains only stage 6 wiring", () => {
+test("the static UI is UTF-8, accessible, one-column, and contains no stage 7 wiring", () => {
   assert.match(html, /<meta charset="UTF-8">/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(css, /env\(safe-area-inset-top\)/);
@@ -328,6 +328,14 @@ test("the production physical provider reaches result and Prompt only after phys
     collectMotionSamplesImplementation: async ({ onState }) => {
       onState("waiting-for-motion");
       onState("collecting-motion", { sampleCount: 1 });
+      onState("validating-motion", {
+        sampleCount: 9,
+        elapsedMs: 132,
+        maxAccelerationMagnitude: 1.25,
+        maxGravityDeviation: 0.15,
+        maxRotationMagnitude: 10.5,
+        completionReason: "requirements-met",
+      });
       return [{
         sequence: 0,
         timeStamp: 1000,
@@ -376,6 +384,7 @@ test("the production physical provider reaches result and Prompt only after phys
       "requesting-motion-permission",
       "waiting-for-motion",
       "collecting-motion",
+      "validating-motion",
       "mixing-physical-source",
     ],
   );
@@ -385,6 +394,11 @@ test("the production physical provider reaches result and Prompt only after phys
   assert.equal(elements["prompt-section"].hidden, false);
   assert.match(elements["prompt-preview"].value, /物理入力接続/);
   assert.match(elements["fortune-status"].textContent, /完了/);
+  assert.equal(elements["diagnostics-status"].textContent, "成功");
+  assert.equal(elements["diagnostics-sample-count"].textContent, "9");
+  assert.equal(elements["diagnostics-motion-duration"].textContent, "132.00");
+  assert.equal(elements["diagnostics-max-acceleration"].textContent, "1.250");
+  assert.equal(elements["diagnostics-reason"].textContent, "requirements-met");
 });
 
 test("pointer fallback is explicit and motion shortage stays on motion retry", async () => {

@@ -193,6 +193,47 @@ textarea {
   outline-offset: 2px;
 }
 
+.diagnostics-card {
+  border-color: #a9781a;
+  background: #fffaf0;
+}
+
+.diagnostics-content {
+  padding-top: 0.75rem;
+}
+
+.diagnostics-content > p {
+  margin-top: 0;
+}
+
+.diagnostics-values {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0 0 1rem;
+}
+
+.diagnostics-values div {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+  border-bottom: 1px solid #e1d3b5;
+  padding: 0.4rem 0;
+}
+
+.diagnostics-values dt {
+  font-weight: 700;
+}
+
+.diagnostics-values dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-content > button {
+  width: 100%;
+}
+
 .danger-button {
   border-color: #982e37;
   color: #7f1e27;

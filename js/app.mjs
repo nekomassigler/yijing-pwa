@@ -4,6 +4,10 @@ import { makeInterpretPrompt, getPromptTemplateHelp } from "./prompt.mjs";
 import { createPhysicalInputProvider } from "./physical-source.mjs";
 import { performFortune } from "./rng.mjs";
 import {
+  STAGE65_DIAGNOSTIC_ELEMENT_IDS,
+  createStage65Diagnostics,
+} from "./stage6_5-diagnostics.mjs";
+import {
   createTemplateBackup,
   initializeTemplateRepository,
   loadInitialTemplatePayload,
@@ -26,6 +30,7 @@ export const REQUIRED_ELEMENT_IDS = Object.freeze([
   "pointer-start-button",
   "pointer-input-area",
   "pointer-status",
+  ...STAGE65_DIAGNOSTIC_ELEMENT_IDS,
   "result-section",
   "primary-name",
   "changing-label",
@@ -169,6 +174,7 @@ export function createApp({
   hexagramData,
   templateRepository,
   byteSourceProvider = null,
+  diagnostics = null,
   clipboard = globalThis.navigator?.clipboard,
   confirmAction = globalThis.confirm?.bind(globalThis),
   downloadBackup = (backup) => downloadTemplateBackup(documentObject, backup),
@@ -176,6 +182,7 @@ export function createApp({
   requireDependency(documentObject, "document");
   requireDependency(hexagramData, "hexagramData");
   requireDependency(templateRepository, "templateRepository");
+  const diagnosticView = diagnostics ?? createStage65Diagnostics(elements);
 
   const state = {
     result: null,
@@ -317,6 +324,7 @@ export function createApp({
       }
 
       state.inputInProgress = true;
+      diagnosticView.begin(mode);
       state.result = null;
       elements["fortune-button"].disabled = true;
       elements["pointer-start-button"].disabled = true;
@@ -330,6 +338,7 @@ export function createApp({
       setStatus(elements["fortune-status"], "準備中: 物理入力を開始します。");
 
       const onInputState = (inputState, detail = {}) => {
+        diagnosticView.update(mode, inputState, detail);
         const messages = {
           "requesting-motion-permission":
             "準備中: モーションセンサーの利用許可を確認しています。",
@@ -371,8 +380,10 @@ export function createApp({
             success: true,
           });
         }
+        diagnosticView.complete(mode);
         return app.result;
       } catch (error) {
+        diagnosticView.fail(mode, error);
         setStatus(elements["fortune-status"], error.message, { error: true });
         if (mode === "motion" && error?.fallbackAllowed === true) {
           state.pointerFallbackOffered = true;

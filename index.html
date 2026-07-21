@@ -69,6 +69,29 @@
         </section>
       </section>
 
+      <details class="card diagnostics-card" open>
+        <summary>段階6.5 実機測定値（最新1回）</summary>
+        <div class="diagnostics-content">
+          <p>
+            iPhone 16での暫定定数調整用です。値はこの画面に一時表示するだけで、保存・外部送信・Promptへの追加は行いません。
+          </p>
+          <dl class="diagnostics-values" aria-live="polite">
+            <div><dt>状態</dt><dd id="diagnostics-status">未測定</dd></div>
+            <div><dt>入力方式</dt><dd id="diagnostics-input-mode">—</dd></div>
+            <div><dt>完了・失敗理由</dt><dd id="diagnostics-reason">—</dd></div>
+            <div><dt>sample数</dt><dd id="diagnostics-sample-count">—</dd></div>
+            <div><dt>モーション収集時間</dt><dd><span id="diagnostics-motion-duration">—</span> ms</dd></div>
+            <div><dt>最大加速度</dt><dd><span id="diagnostics-max-acceleration">—</span> m/s²</dd></div>
+            <div><dt>最大重力偏差</dt><dd><span id="diagnostics-max-gravity-deviation">—</span> m/s²</dd></div>
+            <div><dt>最大回転速度</dt><dd><span id="diagnostics-max-rotation">—</span> deg/s</dd></div>
+            <div><dt>Pointer継続時間</dt><dd><span id="diagnostics-pointer-duration">—</span> ms</dd></div>
+            <div><dt>Pointer move数</dt><dd id="diagnostics-pointer-move-count">—</dd></div>
+            <div><dt>Pointer総移動量</dt><dd><span id="diagnostics-pointer-distance">—</span> px</dd></div>
+          </dl>
+          <button id="diagnostics-clear-button" type="button">測定値の表示を消去</button>
+        </div>
+      </details>
+
       <section id="result-section" class="card" aria-labelledby="result-heading" hidden>
         <h2 id="result-heading">2. 占い結果</h2>
         <dl class="result-summary">
