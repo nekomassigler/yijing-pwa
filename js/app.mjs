@@ -335,15 +335,24 @@ export function createApp({
         state.pointerFallbackOffered = false;
         elements["pointer-fallback-panel"].hidden = true;
       }
-      setStatus(elements["fortune-status"], "準備中: 物理入力を開始します。");
+      setStatus(
+        elements["fortune-status"],
+        mode === "motion"
+          ? "許可確認中: モーションセンサーの利用可否を確認します。"
+          : "準備中: Pointer入力を開始します。",
+      );
 
       const onInputState = (inputState, detail = {}) => {
         diagnosticView.update(mode, inputState, detail);
         const messages = {
           "requesting-motion-permission":
-            "準備中: モーションセンサーの利用許可を確認しています。",
+            "許可確認中: モーションセンサーの利用許可を確認しています。",
+          "arming-motion":
+            "準備中: 端末を安定させています。この間に動かしても占いは開始しません。",
           "waiting-for-motion":
-            "軽く振ってください: 強く振る必要はありません。最初の有効な動きから収集します。",
+            "振る操作待ち: 今、iPhoneを軽く振ってください。強く振る必要はありません。",
+          "detecting-motion":
+            `動作検出中: active sample ${detail.activeSampleCount ?? 0}件。短時間だけ軽く振り続けてください。`,
           "collecting-motion": `取得中: モーションsample ${detail.sampleCount ?? 0}件を収集中です。`,
           "validating-motion": "計算中: 取得したモーション入力を確認しています。",
           "waiting-for-pointer":

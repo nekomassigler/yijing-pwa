@@ -249,6 +249,17 @@ test("the static UI is UTF-8, accessible, one-column, and contains no stage 7 wi
   assert.doesNotMatch(appSource, /ArrayByteSource|Math\.random|URLSearchParams/);
   assert.match(appSource, /createPhysicalInputProvider/);
   assert.doesNotMatch(appSource, /navigator\.serviceWorker/);
+  for (const statusLabel of [
+    "許可確認中",
+    "準備中",
+    "振る操作待ち",
+    "動作検出中",
+    "取得中",
+    "計算中",
+    "完了",
+  ]) {
+    assert.match(appSource, new RegExp(statusLabel));
+  }
 });
 
 test("bootstrap loads only same-origin static JSON and initializes templates", async () => {
@@ -326,14 +337,36 @@ test("the production physical provider reaches result and Prompt only after phys
       return "granted";
     },
     collectMotionSamplesImplementation: async ({ onState }) => {
-      onState("waiting-for-motion");
-      onState("collecting-motion", { sampleCount: 1 });
+      onState("arming-motion", {
+        armingDelayMs: 600,
+        armingIgnoredSampleCount: 36,
+      });
+      onState("waiting-for-motion", { activeSampleCount: 0 });
+      onState("detecting-motion", {
+        activeSampleCount: 1,
+        activeWindowMs: 0,
+      });
+      onState("collecting-motion", {
+        sampleCount: 1,
+        activeSampleCount: 2,
+        activeWindowMs: 17,
+        firstActiveAccelerationMagnitude: 1.4,
+        firstActiveRotationMagnitude: 45,
+        detectionStartReason: "active-sample-count-met:acceleration+rotation",
+      });
       onState("validating-motion", {
         sampleCount: 9,
         elapsedMs: 132,
         maxAccelerationMagnitude: 1.25,
         maxGravityDeviation: 0.15,
         maxRotationMagnitude: 10.5,
+        armingDelayMs: 600,
+        armingIgnoredSampleCount: 36,
+        activeSampleCount: 2,
+        activeWindowMs: 17,
+        firstActiveAccelerationMagnitude: 1.4,
+        firstActiveRotationMagnitude: 45,
+        detectionStartReason: "active-sample-count-met:acceleration+rotation",
         completionReason: "requirements-met",
       });
       return [{
@@ -382,7 +415,9 @@ test("the production physical provider reaches result and Prompt only after phys
     observed.states,
     [
       "requesting-motion-permission",
+      "arming-motion",
       "waiting-for-motion",
+      "detecting-motion",
       "collecting-motion",
       "validating-motion",
       "mixing-physical-source",
@@ -399,6 +434,10 @@ test("the production physical provider reaches result and Prompt only after phys
   assert.equal(elements["diagnostics-motion-duration"].textContent, "132.00");
   assert.equal(elements["diagnostics-max-acceleration"].textContent, "1.250");
   assert.equal(elements["diagnostics-reason"].textContent, "requirements-met");
+  assert.equal(elements["diagnostics-arming-duration"].textContent, "600");
+  assert.equal(elements["diagnostics-arming-ignored-count"].textContent, "36");
+  assert.equal(elements["diagnostics-active-sample-count"].textContent, "2");
+  assert.equal(elements["diagnostics-active-window"].textContent, "17.00");
 });
 
 test("pointer fallback is explicit and motion shortage stays on motion retry", async () => {

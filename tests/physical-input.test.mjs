@@ -17,9 +17,14 @@ import {
 } from "../js/pointer.mjs";
 import { performFortune } from "../js/rng.mjs";
 import {
+  SENSOR_ACTIVE_SAMPLE_COUNT,
+  SENSOR_ACTIVE_WINDOW_MS,
+  SENSOR_ARMING_DELAY_MS,
   SENSOR_CAPTURE_MAX_DURATION_MS,
   SENSOR_CAPTURE_MIN_DURATION_MS,
   SENSOR_DOMAIN,
+  SENSOR_MOTION_THRESHOLD,
+  SENSOR_ROTATION_THRESHOLD,
   MotionCaptureSession,
   collectMotionSamples,
   encodeMotionSamples,
@@ -50,6 +55,19 @@ function motionEvent(timeStamp, {
     accelerationIncludingGravity: gravity,
     rotationRate: rotation,
   };
+}
+
+function activeMotionEvent(timeStamp, overrides = {}) {
+  return motionEvent(timeStamp, {
+    acceleration: { x: 2, y: 0, z: 0 },
+    rotation: { alpha: 0, beta: 0, gamma: 50 },
+    ...overrides,
+  });
+}
+
+function armSession(session) {
+  session.completeArming();
+  return session;
 }
 
 function pointerEvent(type, timeStamp, x, y, overrides = {}) {
@@ -150,16 +168,88 @@ test("physical modules have no persistence, hidden fixed input, or forbidden ran
     physicalSourceText,
     /performFortune|changingIndex|changing_idx|value\s*%\s*6|&\s*1/,
   );
+  assert.equal(SENSOR_ARMING_DELAY_MS, 600);
+  assert.equal(SENSOR_ACTIVE_SAMPLE_COUNT, 2);
+  assert.equal(SENSOR_ACTIVE_WINDOW_MS, 120);
+  assert.equal(SENSOR_MOTION_THRESHOLD, 1.2);
+  assert.equal(SENSOR_ROTATION_THRESHOLD, 40);
 });
 
-test("motion collection includes the trigger and completes only after both minimums", () => {
-  const session = new MotionCaptureSession({
+test("arming ignores threshold crossings and discards their samples and maxima", () => {
+  const session = new MotionCaptureSession();
+  const ignored = session.ingest(activeMotionEvent(10, {
+    acceleration: { x: 99, y: 0, z: 0 },
+    rotation: { alpha: 0, beta: 0, gamma: 999 },
+  }));
+  assert.equal(ignored.status, "arming-motion");
+  assert.equal(ignored.started, false);
+  assert.equal(session.samples.length, 0);
+  assert.equal(session.maxAccelerationMagnitude, null);
+  assert.equal(session.maxRotationMagnitude, null);
+
+  // arming中の一時状態が将来追加されても、完了時に必ず破棄されることを固定する。
+  session.samples.push({ sequence: 0, accelerationX: 99 });
+  session.startTimeStamp = 10;
+  session.previousTimeStamp = 10;
+  session.lastElapsed = 10;
+  session.maxAccelerationMagnitude = 99;
+  session.maxGravityDeviation = 99;
+  session.maxRotationMagnitude = 999;
+
+  const armed = session.completeArming();
+  assert.equal(session.phase, "waiting-for-motion");
+  assert.equal(armed.armingIgnoredSampleCount, 1);
+  assert.equal(armed.sampleCount, 0);
+  assert.equal(armed.maxAccelerationMagnitude, null);
+  assert.equal(armed.maxRotationMagnitude, null);
+  assert.equal(armed.elapsedMs, null);
+});
+
+test("one active sample does not start, but two within the active window do", () => {
+  const session = armSession(new MotionCaptureSession());
+  const first = session.ingest(activeMotionEvent(1000));
+  assert.equal(first.status, "detecting-motion");
+  assert.equal(first.started, false);
+  assert.equal(first.measurement.activeSampleCount, 1);
+  assert.equal(session.samples.length, 0);
+
+  const confirmed = session.ingest(activeMotionEvent(1100));
+  assert.equal(confirmed.status, "collecting-motion");
+  assert.equal(confirmed.started, true);
+  assert.equal(session.samples.length, 1);
+  assert.equal(session.samples[0].timeStamp, 1100);
+  assert.equal(confirmed.measurement.activeSampleCount, 2);
+  assert.equal(confirmed.measurement.activeWindowMs, 100);
+  assert.equal(confirmed.measurement.firstActiveAccelerationMagnitude, 2);
+  assert.equal(confirmed.measurement.firstActiveRotationMagnitude, 50);
+  assert.match(
+    confirmed.measurement.detectionStartReason,
+    /^active-sample-count-met:/,
+  );
+});
+
+test("active samples farther apart than the active window do not start", () => {
+  const session = armSession(new MotionCaptureSession());
+  session.ingest(activeMotionEvent(1000));
+  const tooLate = session.ingest(
+    activeMotionEvent(1000 + SENSOR_ACTIVE_WINDOW_MS + 1),
+  );
+  assert.equal(tooLate.status, "detecting-motion");
+  assert.equal(tooLate.started, false);
+  assert.equal(tooLate.measurement.activeSampleCount, 1);
+  assert.equal(tooLate.measurement.activeWindowMs, 0);
+  assert.equal(session.samples.length, 0);
+});
+
+test("confirmed motion collection includes the confirming event and keeps 128ms minimum", () => {
+  const session = armSession(new MotionCaptureSession({
     minDurationMs: SENSOR_CAPTURE_MIN_DURATION_MS,
     maxDurationMs: SENSOR_CAPTURE_MAX_DURATION_MS,
     minSampleCount: 3,
     motionThreshold: 0.5,
-  });
+  }));
 
+  assert.equal(session.ingest(motionEvent(900)).started, false);
   assert.equal(session.ingest(motionEvent(1000)).started, true);
   assert.equal(session.samples.length, 1);
   assert.equal(session.samples[0].timeStamp, 1000);
@@ -170,24 +260,20 @@ test("motion collection includes the trigger and completes only after both minim
   assert.equal(completed.status, "completed");
   assert.equal(completed.elapsed, 128);
   assert.equal(completed.samples.length, 4);
-  assert.deepEqual(completed.measurement, {
-    inputMode: "motion",
-    sampleCount: 4,
-    elapsedMs: 128,
-    maxAccelerationMagnitude: 1,
-    maxGravityDeviation: 0,
-    maxRotationMagnitude: 0,
-    completionReason: "requirements-met",
-  });
+  assert.equal(completed.measurement.sampleCount, 4);
+  assert.equal(completed.measurement.elapsedMs, 128);
+  assert.equal(completed.measurement.activeSampleCount, 2);
+  assert.equal(completed.measurement.completionReason, "requirements-met");
 });
 
 test("motion collection requires retry when samples are short at 256ms", () => {
-  const session = new MotionCaptureSession({
+  const session = armSession(new MotionCaptureSession({
     minDurationMs: 128,
     maxDurationMs: 256,
     minSampleCount: 6,
     motionThreshold: 0.5,
-  });
+  }));
+  session.ingest(motionEvent(-50));
   session.ingest(motionEvent(0));
   session.ingest(motionEvent(128));
   const outcome = session.ingest(motionEvent(256));
@@ -215,10 +301,10 @@ test("motion permission and waiting failures keep fallback and retry reasons dis
     (error) => error.code === "permission-denied" && error.fallbackAllowed,
   );
 
-  const noEvents = new MotionCaptureSession();
+  const noEvents = armSession(new MotionCaptureSession());
   assert.equal(noEvents.waitingFailure().code, "event-unavailable");
   assert.equal(noEvents.waitingFailure().fallbackAllowed, true);
-  const noValues = new MotionCaptureSession();
+  const noValues = armSession(new MotionCaptureSession());
   noValues.ingest(motionEvent(0, {
     acceleration: null,
     gravity: null,
@@ -226,7 +312,7 @@ test("motion permission and waiting failures keep fallback and retry reasons dis
   }));
   assert.equal(noValues.waitingFailure().code, "values-unavailable");
   assert.equal(noValues.waitingFailure().fallbackAllowed, true);
-  const weakMotion = new MotionCaptureSession();
+  const weakMotion = armSession(new MotionCaptureSession());
   weakMotion.ingest(motionEvent(0, {
     acceleration: { x: 0, y: 0, z: 0 },
     rotation: { alpha: 0, beta: 0, gamma: 0 },
@@ -246,22 +332,37 @@ test("motion permission and waiting failures keep fallback and retry reasons dis
 
 test("motion listeners and timers are removed on successful collection", async () => {
   const eventTarget = new FakeEventTarget();
+  const states = [];
   const promise = collectMotionSamples({
     eventTarget,
+    onState: (state) => states.push(state),
     session: new MotionCaptureSession({
       minDurationMs: 128,
       maxDurationMs: 256,
       minSampleCount: 3,
-      motionThreshold: 0.5,
+      armingDelayMs: 0,
     }),
     waitTimeoutMs: 1000,
   });
-  eventTarget.dispatch(motionEvent(0));
-  eventTarget.dispatch(motionEvent(64));
-  eventTarget.dispatch(motionEvent(128));
+  eventTarget.dispatch(activeMotionEvent(-10));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  eventTarget.dispatch(activeMotionEvent(0));
+  eventTarget.dispatch(activeMotionEvent(50));
+  eventTarget.dispatch(motionEvent(114));
+  eventTarget.dispatch(motionEvent(178));
   const samples = await promise;
   assert.equal(samples.length, 3);
+  assert.equal(samples[0].timeStamp, 50);
   assert.equal(eventTarget.listenerCount(), 0);
+  assert.deepEqual(states, [
+    "arming-motion",
+    "arming-motion",
+    "waiting-for-motion",
+    "detecting-motion",
+    "collecting-motion",
+    "collecting-motion",
+    "validating-motion",
+  ]);
 });
 
 test("motion timeout retry also removes listeners and pending timers", async () => {
@@ -281,10 +382,27 @@ test("motion timeout retry also removes listeners and pending timers", async () 
     setTimeoutImplementation,
     clearTimeoutImplementation,
   });
-  eventTarget.dispatch(motionEvent(0));
-  const captureTimer = [...timers.values()].find(({ delay }) => delay === 256);
-  assert.notEqual(captureTimer, undefined);
-  captureTimer.callback();
+  eventTarget.dispatch(activeMotionEvent(-1));
+  assert.equal(
+    [...timers.values()].some(
+      ({ delay }) => delay === SENSOR_CAPTURE_MAX_DURATION_MS,
+    ),
+    false,
+  );
+  const armingTimerEntry = [...timers.entries()].find(
+    ([, { delay }]) => delay === SENSOR_ARMING_DELAY_MS,
+  );
+  assert.notEqual(armingTimerEntry, undefined);
+  timers.delete(armingTimerEntry[0]);
+  armingTimerEntry[1].callback();
+  eventTarget.dispatch(activeMotionEvent(0));
+  eventTarget.dispatch(activeMotionEvent(50));
+  const captureTimerEntry = [...timers.entries()].find(
+    ([, { delay }]) => delay === SENSOR_CAPTURE_MAX_DURATION_MS,
+  );
+  assert.notEqual(captureTimerEntry, undefined);
+  timers.delete(captureTimerEntry[0]);
+  captureTimerEntry[1].callback();
   await assert.rejects(pending, (error) => error.code === "sample-insufficient");
   assert.equal(eventTarget.listenerCount(), 0);
   assert.equal(timers.size, 0);

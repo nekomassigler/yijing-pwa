@@ -8,6 +8,13 @@ export const STAGE65_DIAGNOSTIC_ELEMENT_IDS = Object.freeze([
   "diagnostics-max-acceleration",
   "diagnostics-max-gravity-deviation",
   "diagnostics-max-rotation",
+  "diagnostics-arming-duration",
+  "diagnostics-arming-ignored-count",
+  "diagnostics-active-sample-count",
+  "diagnostics-active-window",
+  "diagnostics-first-active-acceleration",
+  "diagnostics-first-active-rotation",
+  "diagnostics-detection-start-reason",
   "diagnostics-pointer-duration",
   "diagnostics-pointer-move-count",
   "diagnostics-pointer-distance",
@@ -17,8 +24,10 @@ export const STAGE65_DIAGNOSTIC_ELEMENT_IDS = Object.freeze([
 const EMPTY_VALUE = "—";
 
 const STATE_LABELS = Object.freeze({
-  "requesting-motion-permission": "準備中（センサー許可確認）",
-  "waiting-for-motion": "軽い動作を待機中",
+  "requesting-motion-permission": "許可確認中",
+  "arming-motion": "準備中（arming）",
+  "waiting-for-motion": "振る操作待ち",
+  "detecting-motion": "動作検出中",
   "collecting-motion": "モーション取得中",
   "validating-motion": "モーション取得内容を確認中",
   "retry-required": "モーション再試行が必要",
@@ -98,6 +107,61 @@ export function createStage65Diagnostics(elements) {
         3,
       );
     }
+    if (Object.prototype.hasOwnProperty.call(measurement, "armingDelayMs")) {
+      elements["diagnostics-arming-duration"].textContent = formatNumber(
+        measurement.armingDelayMs,
+        0,
+      );
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(
+        measurement,
+        "armingIgnoredSampleCount",
+      )
+    ) {
+      elements["diagnostics-arming-ignored-count"].textContent = formatInteger(
+        measurement.armingIgnoredSampleCount,
+      );
+    }
+    if (Object.prototype.hasOwnProperty.call(measurement, "activeSampleCount")) {
+      elements["diagnostics-active-sample-count"].textContent = formatInteger(
+        measurement.activeSampleCount,
+      );
+    }
+    if (Object.prototype.hasOwnProperty.call(measurement, "activeWindowMs")) {
+      elements["diagnostics-active-window"].textContent = formatNumber(
+        measurement.activeWindowMs,
+      );
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(
+        measurement,
+        "firstActiveAccelerationMagnitude",
+      )
+    ) {
+      elements["diagnostics-first-active-acceleration"].textContent =
+        formatNumber(measurement.firstActiveAccelerationMagnitude, 3);
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(
+        measurement,
+        "firstActiveRotationMagnitude",
+      )
+    ) {
+      elements["diagnostics-first-active-rotation"].textContent =
+        formatNumber(measurement.firstActiveRotationMagnitude, 3);
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(
+        measurement,
+        "detectionStartReason",
+      )
+    ) {
+      elements["diagnostics-detection-start-reason"].textContent =
+        typeof measurement.detectionStartReason === "string"
+          ? measurement.detectionStartReason
+          : EMPTY_VALUE;
+    }
     if (Object.prototype.hasOwnProperty.call(measurement, "durationMs")) {
       elements["diagnostics-pointer-duration"].textContent = formatNumber(
         measurement.durationMs,
@@ -132,6 +196,13 @@ export function createStage65Diagnostics(elements) {
         "diagnostics-max-acceleration",
         "diagnostics-max-gravity-deviation",
         "diagnostics-max-rotation",
+        "diagnostics-arming-duration",
+        "diagnostics-arming-ignored-count",
+        "diagnostics-active-sample-count",
+        "diagnostics-active-window",
+        "diagnostics-first-active-acceleration",
+        "diagnostics-first-active-rotation",
+        "diagnostics-detection-start-reason",
         "diagnostics-pointer-duration",
         "diagnostics-pointer-move-count",
         "diagnostics-pointer-distance",

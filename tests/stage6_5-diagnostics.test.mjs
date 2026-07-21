@@ -50,6 +50,13 @@ test("motion measurements are formatted in the visible latest-run fields", () =>
     maxAccelerationMagnitude: 1.23456,
     maxGravityDeviation: 0,
     maxRotationMagnitude: 12.34567,
+    armingDelayMs: 600,
+    armingIgnoredSampleCount: 38,
+    activeSampleCount: 2,
+    activeWindowMs: 18.5,
+    firstActiveAccelerationMagnitude: 1.4567,
+    firstActiveRotationMagnitude: 42.6789,
+    detectionStartReason: "active-sample-count-met:acceleration+rotation",
     completionReason: "requirements-met",
   });
   diagnostics.complete("motion");
@@ -62,6 +69,22 @@ test("motion measurements are formatted in the visible latest-run fields", () =>
   assert.equal(elements["diagnostics-max-acceleration"].textContent, "1.235");
   assert.equal(elements["diagnostics-max-gravity-deviation"].textContent, "0.000");
   assert.equal(elements["diagnostics-max-rotation"].textContent, "12.346");
+  assert.equal(elements["diagnostics-arming-duration"].textContent, "600");
+  assert.equal(elements["diagnostics-arming-ignored-count"].textContent, "38");
+  assert.equal(elements["diagnostics-active-sample-count"].textContent, "2");
+  assert.equal(elements["diagnostics-active-window"].textContent, "18.50");
+  assert.equal(
+    elements["diagnostics-first-active-acceleration"].textContent,
+    "1.457",
+  );
+  assert.equal(
+    elements["diagnostics-first-active-rotation"].textContent,
+    "42.679",
+  );
+  assert.equal(
+    elements["diagnostics-detection-start-reason"].textContent,
+    "active-sample-count-met:acceleration+rotation",
+  );
 });
 
 test("pointer failure stays transient and clear removes the displayed values", () => {
@@ -90,5 +113,6 @@ test("pointer failure stays transient and clear removes the displayed values", (
   elements["diagnostics-clear-button"].dispatch("click");
   assert.equal(elements["diagnostics-status"].textContent, "未測定");
   assert.equal(elements["diagnostics-pointer-duration"].textContent, "—");
+  assert.equal(elements["diagnostics-active-sample-count"].textContent, "—");
   assert.deepEqual(diagnostics.snapshot(), { mode: null, reason: null });
 });

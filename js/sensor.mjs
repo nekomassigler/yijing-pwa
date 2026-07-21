@@ -1,13 +1,16 @@
 export const SENSOR_CAPTURE_MIN_DURATION_MS = 128;
 export const SENSOR_CAPTURE_MAX_DURATION_MS = 256;
 
-// 暫定値。iPhone 16 / 対象iOSでの実測後に確定する。
+// 第2回 iPhone 16 / 対象iOS実測用の暫定値。最終値ではない。
 export const SENSOR_MIN_SAMPLE_COUNT = 6;
-export const SENSOR_MOTION_THRESHOLD = 0.75;
-export const SENSOR_ROTATION_THRESHOLD = 8;
+export const SENSOR_ARMING_DELAY_MS = 600;
+export const SENSOR_MOTION_THRESHOLD = 1.2;
+export const SENSOR_ROTATION_THRESHOLD = 40;
+export const SENSOR_ACTIVE_SAMPLE_COUNT = 2;
+export const SENSOR_ACTIVE_WINDOW_MS = 120;
 export const SENSOR_WAIT_FOR_MOTION_TIMEOUT_MS = 5000;
 export const SENSOR_TUNING_STATUS =
-  "provisional-awaiting-iphone16-ios-measurement";
+  "provisional-awaiting-second-iphone16-ios-measurement";
 
 export const SENSOR_DOMAIN = "yijing-pwa-sensor-v1";
 export const SENSOR_CANONICAL_VERSION = 1;
@@ -118,17 +121,37 @@ export function isMotionTrigger(event, {
   motionThreshold = SENSOR_MOTION_THRESHOLD,
   rotationThreshold = SENSOR_ROTATION_THRESHOLD,
 } = {}) {
-  const {
-    accelerationMagnitude,
-    gravityDeviation,
-    rotationMagnitude,
-  } = measureMotionEvent(event);
+  return classifyMotionActivity(event, {
+    motionThreshold,
+    rotationThreshold,
+  }).active;
+}
 
-  return (
-    (accelerationMagnitude !== null && accelerationMagnitude >= motionThreshold) ||
-    (gravityDeviation !== null && gravityDeviation >= motionThreshold) ||
-    (rotationMagnitude !== null && rotationMagnitude >= rotationThreshold)
-  );
+export function classifyMotionActivity(event, {
+  motionThreshold = SENSOR_MOTION_THRESHOLD,
+  rotationThreshold = SENSOR_ROTATION_THRESHOLD,
+} = {}) {
+  const metrics = measureMotionEvent(event);
+  const reasons = [];
+  if (
+    metrics.accelerationMagnitude !== null &&
+    metrics.accelerationMagnitude >= motionThreshold
+  ) {
+    reasons.push("acceleration");
+  }
+  if (
+    metrics.gravityDeviation !== null &&
+    metrics.gravityDeviation >= motionThreshold
+  ) {
+    reasons.push("gravity-deviation");
+  }
+  if (
+    metrics.rotationMagnitude !== null &&
+    metrics.rotationMagnitude >= rotationThreshold
+  ) {
+    reasons.push("rotation");
+  }
+  return { active: reasons.length > 0, reasons, metrics };
 }
 
 export function snapshotMotionEvent(
@@ -163,14 +186,21 @@ export class MotionCaptureSession {
     minSampleCount = SENSOR_MIN_SAMPLE_COUNT,
     motionThreshold = SENSOR_MOTION_THRESHOLD,
     rotationThreshold = SENSOR_ROTATION_THRESHOLD,
+    armingDelayMs = SENSOR_ARMING_DELAY_MS,
+    activeSampleCount = SENSOR_ACTIVE_SAMPLE_COUNT,
+    activeWindowMs = SENSOR_ACTIVE_WINDOW_MS,
   } = {}) {
     this.minDurationMs = minDurationMs;
     this.maxDurationMs = maxDurationMs;
     this.minSampleCount = minSampleCount;
     this.motionThreshold = motionThreshold;
     this.rotationThreshold = rotationThreshold;
-    this.phase = "waiting-for-motion";
+    this.armingDelayMs = armingDelayMs;
+    this.requiredActiveSampleCount = activeSampleCount;
+    this.activeWindowLimitMs = activeWindowMs;
+    this.phase = "arming-motion";
     this.samples = [];
+    this.armingIgnoredSampleCount = 0;
     this.eventCount = 0;
     this.usableEventCount = 0;
     this.startTimeStamp = null;
@@ -179,6 +209,80 @@ export class MotionCaptureSession {
     this.maxAccelerationMagnitude = null;
     this.maxGravityDeviation = null;
     this.maxRotationMagnitude = null;
+    this.activeSampleCount = 0;
+    this.firstActiveTimeStamp = null;
+    this.activeWindowElapsedMs = null;
+    this.firstActiveAccelerationMagnitude = null;
+    this.firstActiveRotationMagnitude = null;
+    this.activeReasons = new Set();
+    this.detectionStartReason = null;
+  }
+
+  resetActiveCandidate() {
+    this.activeSampleCount = 0;
+    this.firstActiveTimeStamp = null;
+    this.activeWindowElapsedMs = null;
+    this.firstActiveAccelerationMagnitude = null;
+    this.firstActiveRotationMagnitude = null;
+    this.activeReasons.clear();
+    this.detectionStartReason = null;
+  }
+
+  completeArming() {
+    if (this.phase !== "arming-motion") {
+      throw new MotionInputError(
+        "arming-already-completed",
+        "モーション入力の準備期間は既に終了しています。",
+      );
+    }
+    clearMotionSamples(this.samples);
+    this.eventCount = 0;
+    this.usableEventCount = 0;
+    this.startTimeStamp = null;
+    this.previousTimeStamp = null;
+    this.lastElapsed = null;
+    this.maxAccelerationMagnitude = null;
+    this.maxGravityDeviation = null;
+    this.maxRotationMagnitude = null;
+    this.resetActiveCandidate();
+    this.phase = "waiting-for-motion";
+    return this.measurement("arming-completed");
+  }
+
+  expireActiveCandidate(timeStamp) {
+    if (
+      this.activeSampleCount === 0 ||
+      this.firstActiveTimeStamp === null ||
+      timeStamp === null ||
+      timeStamp - this.firstActiveTimeStamp <= this.activeWindowLimitMs
+    ) {
+      return false;
+    }
+    this.resetActiveCandidate();
+    return true;
+  }
+
+  recordActiveSample(timeStamp, activity) {
+    this.expireActiveCandidate(timeStamp);
+    if (this.activeSampleCount === 0) {
+      this.firstActiveTimeStamp = timeStamp;
+      this.firstActiveAccelerationMagnitude =
+        activity.metrics.accelerationMagnitude;
+      this.firstActiveRotationMagnitude = activity.metrics.rotationMagnitude;
+    }
+    this.activeSampleCount += 1;
+    this.activeWindowElapsedMs = timeStamp - this.firstActiveTimeStamp;
+    for (const reason of activity.reasons) {
+      this.activeReasons.add(reason);
+    }
+    if (this.activeSampleCount >= this.requiredActiveSampleCount) {
+      const reasonOrder = ["acceleration", "gravity-deviation", "rotation"];
+      const sources = reasonOrder.filter((reason) => this.activeReasons.has(reason));
+      this.detectionStartReason =
+        `active-sample-count-met:${sources.join("+")}`;
+      return true;
+    }
+    return false;
   }
 
   observe(event) {
@@ -205,6 +309,15 @@ export class MotionCaptureSession {
       maxAccelerationMagnitude: this.maxAccelerationMagnitude,
       maxGravityDeviation: this.maxGravityDeviation,
       maxRotationMagnitude: this.maxRotationMagnitude,
+      armingDelayMs: this.armingDelayMs,
+      armingIgnoredSampleCount: this.armingIgnoredSampleCount,
+      activeSampleCount: this.activeSampleCount,
+      activeWindowMs: this.activeWindowElapsedMs,
+      activeWindowLimitMs: this.activeWindowLimitMs,
+      firstActiveAccelerationMagnitude:
+        this.firstActiveAccelerationMagnitude,
+      firstActiveRotationMagnitude: this.firstActiveRotationMagnitude,
+      detectionStartReason: this.detectionStartReason,
       completionReason,
     };
   }
@@ -212,6 +325,14 @@ export class MotionCaptureSession {
   ingest(event) {
     if (this.phase === "completed" || this.phase === "retry-required") {
       throw new MotionInputError("session-finished", "モーション収集は終了しています。");
+    }
+    if (this.phase === "arming-motion") {
+      this.armingIgnoredSampleCount += 1;
+      return {
+        status: "arming-motion",
+        started: false,
+        measurement: this.measurement("arming"),
+      };
     }
     this.eventCount += 1;
     this.observe(event);
@@ -221,19 +342,52 @@ export class MotionCaptureSession {
     }
 
     if (this.phase === "waiting-for-motion") {
-      if (!usable || !isMotionTrigger(event, {
+      const timeStamp = finiteOrNull(event?.timeStamp);
+      const activeWindowExpired = this.expireActiveCandidate(timeStamp);
+      if (!usable) {
+        return {
+          status: this.activeSampleCount > 0
+            ? "detecting-motion"
+            : "waiting-for-motion",
+          started: false,
+          activeWindowExpired,
+          measurement: this.measurement(
+            this.activeSampleCount > 0 ? "active-sample-pending" : "waiting",
+          ),
+        };
+      }
+      const activity = classifyMotionActivity(event, {
         motionThreshold: this.motionThreshold,
         rotationThreshold: this.rotationThreshold,
-      })) {
-        return { status: "waiting-for-motion", started: false };
+      });
+      if (!activity.active) {
+        return {
+          status: this.activeSampleCount > 0
+            ? "detecting-motion"
+            : "waiting-for-motion",
+          started: false,
+          activeWindowExpired,
+          measurement: this.measurement(
+            this.activeSampleCount > 0 ? "active-sample-pending" : "waiting",
+          ),
+        };
       }
-      const timeStamp = finiteOrNull(event?.timeStamp);
       if (timeStamp === null) {
         throw new MotionInputError(
           "values-unavailable",
           "有効なモーションイベント時刻を取得できませんでした。",
-          { fallbackAllowed: true },
+          {
+            fallbackAllowed: true,
+            measurement: this.measurement("values-unavailable"),
+          },
         );
+      }
+      if (!this.recordActiveSample(timeStamp, activity)) {
+        return {
+          status: "detecting-motion",
+          started: false,
+          measurement: this.measurement("active-sample-pending"),
+        };
       }
       this.phase = "collecting-motion";
       this.startTimeStamp = timeStamp;
@@ -405,6 +559,7 @@ export function collectMotionSamples({
   setTimeoutImplementation = globalThis.setTimeout?.bind(globalThis),
   clearTimeoutImplementation = globalThis.clearTimeout?.bind(globalThis),
   session = new MotionCaptureSession(),
+  armingDelayMs = session.armingDelayMs,
   waitTimeoutMs = SENSOR_WAIT_FOR_MOTION_TIMEOUT_MS,
 } = {}) {
   if (
@@ -429,7 +584,18 @@ export function collectMotionSamples({
     );
   }
 
+  if (!Number.isFinite(armingDelayMs) || armingDelayMs < 0) {
+    return Promise.reject(
+      new MotionInputError(
+        "invalid-arming-delay",
+        "モーション入力の準備時間が不正です。",
+      ),
+    );
+  }
+  session.armingDelayMs = armingDelayMs;
+
   return new Promise((resolve, reject) => {
+    let armingTimer = null;
     let waitTimer = null;
     let captureTimer = null;
     let settled = false;
@@ -437,12 +603,16 @@ export function collectMotionSamples({
     const cleanup = () => {
       eventTarget.removeEventListener("devicemotion", handleMotion);
       signal?.removeEventListener?.("abort", handleAbort);
+      if (armingTimer !== null) {
+        clearTimeoutImplementation(armingTimer);
+      }
       if (waitTimer !== null) {
         clearTimeoutImplementation(waitTimer);
       }
       if (captureTimer !== null) {
         clearTimeoutImplementation(captureTimer);
       }
+      armingTimer = null;
       waitTimer = null;
       captureTimer = null;
       clearMotionSamples(session.samples);
@@ -452,6 +622,8 @@ export function collectMotionSamples({
       session.maxAccelerationMagnitude = null;
       session.maxGravityDeviation = null;
       session.maxRotationMagnitude = null;
+      session.armingIgnoredSampleCount = 0;
+      session.resetActiveCandidate();
     };
     const finishResolve = (samples) => {
       if (settled) return;
@@ -477,9 +649,33 @@ export function collectMotionSamples({
       onState("validating-motion", error.measurement);
       finishReject(error);
     };
+    const handleWaitTimeout = () => {
+      finishReject(session.waitingFailure());
+    };
+    const handleArmingComplete = () => {
+      if (settled) return;
+      armingTimer = null;
+      try {
+        const measurement = session.completeArming();
+        onState("waiting-for-motion", measurement);
+        waitTimer = setTimeoutImplementation(handleWaitTimeout, waitTimeoutMs);
+      } catch (error) {
+        finishReject(error);
+      }
+    };
     const handleMotion = (event) => {
       try {
         const outcome = session.ingest(event);
+        if (outcome.status === "arming-motion") {
+          onState("arming-motion", outcome.measurement);
+        } else if (outcome.status === "detecting-motion") {
+          onState("detecting-motion", outcome.measurement);
+        } else if (
+          outcome.status === "waiting-for-motion" &&
+          outcome.activeWindowExpired
+        ) {
+          onState("waiting-for-motion", outcome.measurement);
+        }
         if (outcome.started) {
           if (waitTimer !== null) {
             clearTimeoutImplementation(waitTimer);
@@ -519,10 +715,8 @@ export function collectMotionSamples({
     }
     eventTarget.addEventListener("devicemotion", handleMotion);
     signal?.addEventListener?.("abort", handleAbort, { once: true });
-    onState("waiting-for-motion");
-    waitTimer = setTimeoutImplementation(() => {
-      finishReject(session.waitingFailure());
-    }, waitTimeoutMs);
+    onState("arming-motion", session.measurement("arming"));
+    armingTimer = setTimeoutImplementation(handleArmingComplete, armingDelayMs);
   });
 }
 
