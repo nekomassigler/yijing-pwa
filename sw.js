@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "yijing-pwa-";
-const CACHE_VERSION = "20260725-02";
+const CACHE_VERSION = "20260725-03";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 
 const PRECACHE_URLS = Object.freeze([

@@ -1,4 +1,4 @@
-import { Hexagram, changingIndexToLineIndex } from "./domain.mjs";
+import { changingIndexToLineIndex } from "./domain.mjs";
 import { loadHexagramData } from "./data.mjs";
 import { makeInterpretPrompt, getPromptTemplateHelp } from "./prompt.mjs";
 import { createPhysicalInputProvider } from "./physical-source.mjs";
@@ -31,9 +31,7 @@ export const REQUIRED_ELEMENT_IDS = Object.freeze([
   "changing-label",
   "changed-name",
   "primary-diagram-name",
-  "changed-diagram-name",
   "primary-lines",
-  "changed-lines",
   "primary-kaji",
   "primary-other",
   "primary-yao-summary",
@@ -246,22 +244,14 @@ export function createApp({
   };
 
   const renderResult = (result) => {
-    const changed = new Hexagram(result.lines).changed(result.changing_idx);
     elements["primary-name"].textContent = result.primary;
     elements["changing-label"].textContent = result.var_kanji;
     elements["changed-name"].textContent = result.changed;
     elements["primary-diagram-name"].textContent = result.primary;
-    elements["changed-diagram-name"].textContent = result.changed;
     renderHexagramLines(
       documentObject,
       elements["primary-lines"],
       result.lines,
-      result.changing_idx,
-    );
-    renderHexagramLines(
-      documentObject,
-      elements["changed-lines"],
-      changed.yinYang,
       result.changing_idx,
     );
 

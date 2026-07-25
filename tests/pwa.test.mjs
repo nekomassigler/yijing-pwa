@@ -70,7 +70,11 @@ function createServiceWorkerHarness({ installFailure = null } = {}) {
       return cache;
     },
     async keys() {
-      return ["yijing-pwa-v0", "yijing-pwa-v1", "another-app-v8"];
+      return [
+        "yijing-pwa-20260725-02",
+        "yijing-pwa-20260725-03",
+        "another-app-v8",
+      ];
     },
     async delete(name) {
       deleted.push(name);
@@ -193,7 +197,7 @@ test("precache is unique, complete, and excludes developer diagnostics", async (
 
 test("service worker has isolated versioning and conservative update rules", () => {
   assert.match(swSource, /const CACHE_PREFIX = "yijing-pwa-";/);
-  assert.match(swSource, /const CACHE_VERSION = "v1";/);
+  assert.match(swSource, /const CACHE_VERSION = "20260725-03";/);
   assert.match(swSource, /cache\.addAll\(PRECACHE_URLS\)/);
   assert.doesNotMatch(swSource, /skipWaiting\s*\(|clients\.claim\s*\(/);
   assert.match(
@@ -209,7 +213,7 @@ test("install failure propagates and activate deletes only an old app cache", as
   await dispatchExtendable(ok.listeners.get("install"));
   assert.deepEqual(ok.addAllCalls, [parsePrecacheUrls(swSource)]);
   await dispatchExtendable(ok.listeners.get("activate"));
-  assert.deepEqual(ok.deleted, ["yijing-pwa-v0"]);
+  assert.deepEqual(ok.deleted, ["yijing-pwa-20260725-02"]);
 
   const failure = new Error("missing precache file");
   const broken = createServiceWorkerHarness({ installFailure: failure });

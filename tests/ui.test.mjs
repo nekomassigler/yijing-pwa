@@ -258,7 +258,7 @@ test("the static PWA UI is UTF-8, accessible, one-column, and has no detailed di
   assert.doesNotMatch(html, /diagnostics-values|diagnostics-sample-count|段階6\.5/u);
   assert.doesNotMatch(html, /固定結果/u);
   assert.doesNotMatch(html, /履歴|保存先|重複警告|コイン|手入力/u);
-  assert.match(html, /サイコロを振る代わりに/);
+  assert.match(html, /iPhoneをちょっとだけ振ってください/);
   assert.match(html, /強く振る必要はありません/);
   assert.match(html, /落としたり周囲へぶつけたりしないよう/);
   assert.doesNotMatch(appSource, /ArrayByteSource|Math\.random|URLSearchParams/);
@@ -534,7 +534,7 @@ test("double execution is blocked while physical input is pending", async () => 
   assert.equal(elements["fortune-button"].disabled, false);
 });
 
-test("test-only injected bytes render the Python result, six lines, descriptions, and Prompt", async () => {
+test("test-only injected bytes render the Python result, primary six lines, descriptions, and Prompt", async () => {
   const harness = await createHarness({ withByteSource: true });
   const { app, controls, elements, repository, vector } = harness;
   elements["theme-input"].value = "　検討テーマ　";
@@ -552,32 +552,27 @@ test("test-only injected bytes render the Python result, six lines, descriptions
   assert.equal(elements["changed-name"].textContent, vector.changed);
 
   const expectedLineIndexes = [5, 4, 3, 2, 1, 0];
-  for (const [containerId, expectedLines] of [
-    ["primary-lines", vector.lines],
-    ["changed-lines", vector.changedLines],
-  ]) {
-    const rendered = elements[containerId].children;
-    assert.deepEqual(
-      rendered.map(({ dataset }) => Number(dataset.lineIndex)),
-      expectedLineIndexes,
-    );
-    for (const line of rendered) {
-      const lineIndex = Number(line.dataset.lineIndex);
-      const bit = expectedLines[lineIndex];
-      assert.equal(Number(line.dataset.bit), bit);
-      assert.equal(line.classList.contains(bit === 0 ? "yang" : "yin"), true);
-      const segmentCount = line.children.filter((child) =>
-        child.classList.contains("yao-segment"),
-      ).length;
-      assert.equal(segmentCount, bit === 0 ? 1 : 2);
-    }
-    const changingLines = rendered.filter((line) =>
-      line.classList.contains("changing"),
-    );
-    assert.equal(changingLines.length, 1);
-    assert.equal(changingLines[0].dataset.lineIndex, "4");
-    assert.match(changingLines[0].getAttribute("aria-label"), /五爻.*変爻/);
+  const rendered = elements["primary-lines"].children;
+  assert.deepEqual(
+    rendered.map(({ dataset }) => Number(dataset.lineIndex)),
+    expectedLineIndexes,
+  );
+  for (const line of rendered) {
+    const lineIndex = Number(line.dataset.lineIndex);
+    const bit = vector.lines[lineIndex];
+    assert.equal(Number(line.dataset.bit), bit);
+    assert.equal(line.classList.contains(bit === 0 ? "yang" : "yin"), true);
+    const segmentCount = line.children.filter((child) =>
+      child.classList.contains("yao-segment"),
+    ).length;
+    assert.equal(segmentCount, bit === 0 ? 1 : 2);
   }
+  const changingLines = rendered.filter((line) =>
+    line.classList.contains("changing"),
+  );
+  assert.equal(changingLines.length, 1);
+  assert.equal(changingLines[0].dataset.lineIndex, "4");
+  assert.match(changingLines[0].getAttribute("aria-label"), /五爻.*変爻/);
 
   const data = new HexagramData(hexagramPayload);
   assert.equal(
