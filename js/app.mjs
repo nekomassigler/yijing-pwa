@@ -4,10 +4,6 @@ import { makeInterpretPrompt, getPromptTemplateHelp } from "./prompt.mjs";
 import { createPhysicalInputProvider } from "./physical-source.mjs";
 import { performFortune } from "./rng.mjs";
 import {
-  STAGE65_DIAGNOSTIC_ELEMENT_IDS,
-  createStage65Diagnostics,
-} from "./stage6_5-diagnostics.mjs";
-import {
   createTemplateBackup,
   initializeTemplateRepository,
   loadInitialTemplatePayload,
@@ -30,7 +26,6 @@ export const REQUIRED_ELEMENT_IDS = Object.freeze([
   "pointer-start-button",
   "pointer-input-area",
   "pointer-status",
-  ...STAGE65_DIAGNOSTIC_ELEMENT_IDS,
   "result-section",
   "primary-name",
   "changing-label",
@@ -69,6 +64,13 @@ export const REQUIRED_ELEMENT_IDS = Object.freeze([
 ]);
 
 const LINE_LABELS = Object.freeze(["初爻", "二爻", "三爻", "四爻", "五爻", "上爻"]);
+
+const NOOP_DIAGNOSTICS = Object.freeze({
+  begin() {},
+  update() {},
+  complete() {},
+  fail() {},
+});
 
 function setStatus(element, message, { error = false, success = false } = {}) {
   element.textContent = error ? `エラー: ${message}` : message;
@@ -182,7 +184,7 @@ export function createApp({
   requireDependency(documentObject, "document");
   requireDependency(hexagramData, "hexagramData");
   requireDependency(templateRepository, "templateRepository");
-  const diagnosticView = diagnostics ?? createStage65Diagnostics(elements);
+  const diagnosticView = diagnostics ?? NOOP_DIAGNOSTICS;
 
   const state = {
     result: null,

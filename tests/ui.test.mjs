@@ -11,6 +11,7 @@ import {
 import { HexagramData } from "../js/data.mjs";
 import { makeInterpretPrompt } from "../js/prompt.mjs";
 import { createPhysicalInputProvider } from "../js/physical-source.mjs";
+import { registerServiceWorker } from "../js/register-sw.mjs";
 import { ArrayByteSource } from "../js/rng.mjs";
 import {
   PROMPT_TEMPLATE_STORAGE_KEY,
@@ -19,11 +20,20 @@ import {
   parseInitialTemplateJson,
 } from "../js/templates.mjs";
 
-const [html, css, appSource, hexagramPayload, initialTemplateText, golden] =
+const [
+  html,
+  css,
+  appSource,
+  registrationSource,
+  hexagramPayload,
+  initialTemplateText,
+  golden,
+] =
   await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
     readFile(new URL("../js/app.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../js/register-sw.mjs", import.meta.url), "utf8"),
     readFile(new URL("../data/hexagrams.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("../data/prompt_templates.json", import.meta.url), "utf8"),
     readFile(new URL("./golden_vectors.json", import.meta.url), "utf8").then(JSON.parse),
@@ -213,7 +223,7 @@ async function createHarness({ withByteSource = false, byteSourceProvider } = {}
   };
 }
 
-test("the static UI is UTF-8, accessible, one-column, and contains no stage 7 wiring", () => {
+test("the static PWA UI is UTF-8, accessible, one-column, and has no detailed diagnostics", () => {
   assert.match(html, /<meta charset="UTF-8">/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(css, /env\(safe-area-inset-top\)/);
@@ -241,7 +251,12 @@ test("the static UI is UTF-8, accessible, one-column, and contains no stage 7 wi
   }
   assert.match(html, /aria-live="polite"/);
   assert.match(html, /aria-describedby="template-import-summary"/);
-  assert.doesNotMatch(html, /manifest|service-worker|固定結果/iu);
+  assert.match(html, /rel="manifest" href="\.\/manifest\.webmanifest"/);
+  assert.match(html, /rel="apple-touch-icon"[^>]+href="\.\/icons\/apple-touch-icon\.png"/);
+  assert.match(html, /src="\.\/js\/register-sw\.mjs"/);
+  assert.match(html, /href="\.\/diagnostics\.html"/);
+  assert.doesNotMatch(html, /diagnostics-values|diagnostics-sample-count|段階6\.5/u);
+  assert.doesNotMatch(html, /固定結果/u);
   assert.doesNotMatch(html, /履歴|保存先|重複警告|コイン|手入力/u);
   assert.match(html, /サイコロを振る代わりに/);
   assert.match(html, /強く振る必要はありません/);
@@ -249,6 +264,8 @@ test("the static UI is UTF-8, accessible, one-column, and contains no stage 7 wi
   assert.doesNotMatch(appSource, /ArrayByteSource|Math\.random|URLSearchParams/);
   assert.match(appSource, /createPhysicalInputProvider/);
   assert.doesNotMatch(appSource, /navigator\.serviceWorker/);
+  assert.doesNotMatch(appSource, /\.\/diagnostics\.mjs|STAGE65_DIAGNOSTIC/);
+  assert.match(registrationSource, /register\("\.\/sw\.js", \{ scope: "\.\/" \}\)/);
   for (const statusLabel of [
     "許可確認中",
     "準備中",
@@ -308,6 +325,24 @@ test("bootstrap loads only same-origin static JSON and initializes templates", a
     documentObject.getElementById("pointer-fallback-reason").textContent,
     /DeviceMotion API/,
   );
+});
+
+test("service worker registration uses project-relative script and scope", async () => {
+  const calls = [];
+  const registration = { active: true };
+  const result = await registerServiceWorker({
+    serviceWorker: {
+      async register(scriptUrl, options) {
+        calls.push({ scriptUrl, options });
+        return registration;
+      },
+    },
+  });
+  assert.equal(result, registration);
+  assert.deepEqual(calls, [
+    { scriptUrl: "./sw.js", options: { scope: "./" } },
+  ]);
+  assert.equal(await registerServiceWorker({ serviceWorker: null }), null);
 });
 
 test("production construction has no byte source and never generates a hidden fixed result", async () => {
@@ -429,15 +464,6 @@ test("the production physical provider reaches result and Prompt only after phys
   assert.equal(elements["prompt-section"].hidden, false);
   assert.match(elements["prompt-preview"].value, /物理入力接続/);
   assert.match(elements["fortune-status"].textContent, /完了/);
-  assert.equal(elements["diagnostics-status"].textContent, "成功");
-  assert.equal(elements["diagnostics-sample-count"].textContent, "9");
-  assert.equal(elements["diagnostics-motion-duration"].textContent, "132.00");
-  assert.equal(elements["diagnostics-max-acceleration"].textContent, "1.250");
-  assert.equal(elements["diagnostics-reason"].textContent, "requirements-met");
-  assert.equal(elements["diagnostics-arming-duration"].textContent, "600");
-  assert.equal(elements["diagnostics-arming-ignored-count"].textContent, "36");
-  assert.equal(elements["diagnostics-active-sample-count"].textContent, "2");
-  assert.equal(elements["diagnostics-active-window"].textContent, "17.00");
 });
 
 test("pointer fallback is explicit and motion shortage stays on motion retry", async () => {
@@ -679,4 +705,41 @@ test("template CRUD and two-step backup import work through UI actions", async (
   const beforeInvalid = storage.getItem(PROMPT_TEMPLATE_STORAGE_KEY);
   assert.equal(await app.prepareImport(), null);
   assert.equal(storage.getItem(PROMPT_TEMPLATE_STORAGE_KEY), beforeInvalid);
+});
+
+test("cached JSON supports offline bootstrap, fortune, and Prompt generation", async () => {
+  const cachedText = new Map([
+    ["hexagrams.json", JSON.stringify(hexagramPayload)],
+    ["prompt_templates.json", initialTemplateText],
+  ]);
+  const fetchImplementation = async (url) => {
+    const name = new URL(url).pathname.split("/").at(-1);
+    if (!cachedText.has(name)) throw new Error(`offline cache miss: ${name}`);
+    return {
+      ok: true,
+      status: 200,
+      text: async () => cachedText.get(name),
+    };
+  };
+  const documentObject = new FakeDocument();
+  const vector = golden.requiredCases.find(
+    ({ name }) => name === "requirement_mapping",
+  );
+  const app = await bootstrapApp({
+    document: documentObject,
+    fetchImplementation,
+    storage: new MemoryStorage(),
+    clipboard: { writeText: async () => {} },
+    byteSourceProvider: async () => new ArrayByteSource(vector.inputBytes),
+    confirmAction: async () => false,
+    downloadBackup: async () => {},
+  });
+
+  documentObject.getElementById("theme-input").value = "オフライン確認";
+  const result = await app.runFortune();
+  assert.equal(result.primary, vector.primary);
+  assert.match(
+    documentObject.getElementById("prompt-preview").value,
+    /オフライン確認/,
+  );
 });

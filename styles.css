@@ -84,7 +84,8 @@ textarea {
 }
 
 .app-header__inner,
-.app-shell {
+.app-shell,
+.app-footer {
   width: min(100%, 44rem);
   margin: 0 auto;
 }
@@ -232,6 +233,20 @@ textarea {
 
 .diagnostics-content > button {
   width: 100%;
+}
+
+.diagnostics-actions {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.diagnostics-actions button {
+  width: 100%;
+}
+
+.diagnostics-note {
+  border-left: 0.3rem solid #a9781a;
+  padding-left: 0.7rem;
 }
 
 .danger-button {
@@ -432,6 +447,22 @@ summary {
 
 [hidden] {
   display: none !important;
+}
+
+.app-footer {
+  padding: 0 max(1rem, env(safe-area-inset-right)) calc(1.25rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  text-align: right;
+}
+
+.app-footer a {
+  color: #47536a;
+  font-size: 0.82rem;
+}
+
+@media (display-mode: standalone) {
+  body {
+    overscroll-behavior-y: none;
+  }
 }
 
 @media (min-width: 34rem) {

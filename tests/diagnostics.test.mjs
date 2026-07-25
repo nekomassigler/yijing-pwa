@@ -3,18 +3,31 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  DIAGNOSTICS_PAGE_ELEMENT_IDS,
+  createDiagnosticsApp,
+} from "../js/diagnostics-app.mjs";
+import {
   STAGE65_DIAGNOSTIC_ELEMENT_IDS,
   createStage65Diagnostics,
-} from "../js/stage6_5-diagnostics.mjs";
+} from "../js/diagnostics.mjs";
 
 const source = await readFile(
-  new URL("../js/stage6_5-diagnostics.mjs", import.meta.url),
+  new URL("../js/diagnostics.mjs", import.meta.url),
   "utf8",
 );
+const [pageHtml, pageSource, physicalSource] = await Promise.all([
+  readFile(new URL("../diagnostics.html", import.meta.url), "utf8"),
+  readFile(new URL("../js/diagnostics-app.mjs", import.meta.url), "utf8"),
+  readFile(new URL("../js/physical-source.mjs", import.meta.url), "utf8"),
+]);
 
 class FakeElement {
   constructor() {
     this.textContent = "";
+    this.dataset = {};
+    this.disabled = false;
+    this.hidden = false;
+    this.attributes = new Map();
     this.listeners = new Map();
   }
 
@@ -25,6 +38,10 @@ class FakeElement {
   dispatch(type) {
     this.listeners.get(type)?.();
   }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
 }
 
 function createElements() {
@@ -33,11 +50,22 @@ function createElements() {
   );
 }
 
-test("stage 6.5 diagnostics have no storage, network, log, or URL channel", () => {
+test("developer diagnostics have no storage, network, log, or URL channel", () => {
   assert.doesNotMatch(
-    source,
+    `${source}\n${pageSource}`,
     /localStorage|sessionStorage|indexedDB|fetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|console\.|URLSearchParams/,
   );
+  assert.doesNotMatch(pageSource, /templates\.mjs|prompt\.mjs|performFortune/);
+  assert.match(pageSource, /from "\.\/physical-source\.mjs"/);
+  assert.match(physicalSource, /from "\.\/sensor\.mjs"/);
+  assert.match(physicalSource, /from "\.\/pointer\.mjs"/);
+  for (const id of DIAGNOSTICS_PAGE_ELEMENT_IDS) {
+    assert.equal(
+      (pageHtml.match(new RegExp(`id="${id}"`, "g")) ?? []).length,
+      1,
+      `${id} must appear exactly once on diagnostics.html`,
+    );
+  }
 });
 
 test("motion measurements are formatted in the visible latest-run fields", () => {
@@ -115,4 +143,43 @@ test("pointer failure stays transient and clear removes the displayed values", (
   assert.equal(elements["diagnostics-pointer-duration"].textContent, "—");
   assert.equal(elements["diagnostics-active-sample-count"].textContent, "—");
   assert.deepEqual(diagnostics.snapshot(), { mode: null, reason: null });
+});
+
+test("developer page consumes the production ByteSource without creating a fortune", async () => {
+  const elements = Object.fromEntries(
+    DIAGNOSTICS_PAGE_ELEMENT_IDS.map((id) => [id, new FakeElement()]),
+  );
+  const state = { nextByteCalls: 0, disposeCalls: 0 };
+  const app = createDiagnosticsApp({
+    document: {},
+    elements,
+    byteSourceProvider: async ({ mode, onState }) => {
+      assert.equal(mode, "motion");
+      onState("validating-motion", {
+        sampleCount: 8,
+        elapsedMs: 130,
+        completionReason: "requirements-met",
+      });
+      onState("mixing-physical-source");
+      return {
+        async nextByte() {
+          state.nextByteCalls += 1;
+          return 42;
+        },
+        dispose() {
+          state.disposeCalls += 1;
+        },
+      };
+    },
+  });
+
+  assert.equal(await app.run("motion"), true);
+  assert.deepEqual(state, { nextByteCalls: 1, disposeCalls: 1 });
+  assert.equal(elements["diagnostics-status"].textContent, "成功");
+  assert.equal(elements["diagnostics-sample-count"].textContent, "8");
+  assert.equal(elements["diagnostics-reason"].textContent, "requirements-met");
+  assert.match(
+    elements["diagnostics-operation-status"].textContent,
+    /占い結果やPromptへ使用していません/,
+  );
 });

@@ -1,4 +1,4 @@
-// 段階6.5の実機調整専用。最新1回分だけをDOMへ表示し、保存・送信しない。
+// 開発者向け実機診断専用。最新1回分だけをDOMへ表示し、保存・送信しない。
 export const STAGE65_DIAGNOSTIC_ELEMENT_IDS = Object.freeze([
   "diagnostics-status",
   "diagnostics-input-mode",
@@ -231,7 +231,7 @@ export function createStage65Diagnostics(elements) {
       elements["diagnostics-input-mode"].textContent = modeLabel(mode);
       elements["diagnostics-status"].textContent = "成功";
       if (currentReason === null || currentReason === "collecting") {
-        currentReason = "fortune-completed";
+        currentReason = "physical-input-completed";
         elements["diagnostics-reason"].textContent = currentReason;
       }
     },
