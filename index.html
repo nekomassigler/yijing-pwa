@@ -19,8 +19,8 @@
     <header class="app-header">
       <div class="app-header__inner">
         <p class="eyebrow">易占い</p>
-        <h1>物理入力からPromptを作る</h1>
-        <p>テーマを入力し、得られた卦辞・爻辞を確認してAIアプリ用Promptをコピーします。</p>
+        <h1>AIに占い結果を解釈させるPromptを作る</h1>
+        <p>iPhoneを振って占い、結果をAIに解釈させるPromptをコピーします。</p>
       </div>
     </header>
 
@@ -40,8 +40,8 @@
         ></textarea>
         <div class="motion-guidance" aria-labelledby="motion-guidance-heading">
           <h3 id="motion-guidance-heading">iPhoneを軽く振って入力します</h3>
-          <p>サイコロを振る代わりに、iPhoneを0.5秒未満の短時間だけ軽く振ります。強く振る必要はありません。</p>
-          <p>落としたり周囲へぶつけたりしないよう、安全な場所で端末をしっかり持ってください。</p>
+          <p>iPhoneをちょっとだけ振ってください。強く振る必要はありません。</p>
+          <p>※落としたり周囲へぶつけたりしないよう、安全な場所で端末をしっかり持ってください。</p>
         </div>
         <button id="fortune-button" class="primary-button" type="button">占う</button>
         <p id="fortune-status" class="status-message" role="status" aria-live="polite">
@@ -57,7 +57,7 @@
           <h3 id="pointer-fallback-heading">指でなぞる物理入力へ切り替える</h3>
           <p id="pointer-fallback-reason" class="status-message" role="alert"></p>
           <p>
-            センサーを利用できない理由を確認し、切り替える場合だけ開始ボタンを押してください。単一タップでは完了しません。
+            センサーを利用できませんので、画面を指でなぞって占います。開始ボタンを押してください。単一タップでは完了しません。
           </p>
           <button id="pointer-start-button" type="button">
             Pointer入力を開始
@@ -103,29 +103,20 @@
               aria-label="本卦の六爻。上爻から初爻の順"
             ></div>
           </figure>
-          <figure class="hexagram-card">
-            <figcaption>之卦 <span id="changed-diagram-name"></span></figcaption>
-            <div
-              id="changed-lines"
-              class="hexagram-lines"
-              role="group"
-              aria-label="之卦の六爻。上爻から初爻の順"
-            ></div>
-          </figure>
         </div>
 
         <div class="text-sections">
-          <details open>
+          <details>
             <summary>本卦の卦辞</summary>
             <p id="primary-kaji" class="preserve-text"></p>
             <p id="primary-other" class="preserve-text supplementary-text"></p>
           </details>
-          <details open>
+          <details>
             <summary id="primary-yao-summary">本卦の爻辞</summary>
             <p id="primary-yao" class="preserve-text"></p>
             <p id="primary-yao-other" class="preserve-text supplementary-text"></p>
           </details>
-          <details open>
+          <details>
             <summary>之卦の卦辞</summary>
             <p id="changed-kaji" class="preserve-text"></p>
             <p id="changed-other" class="preserve-text supplementary-text"></p>
@@ -137,7 +128,7 @@
         <h2 id="prompt-heading">3. Promptを確認・コピー</h2>
         <label for="template-select">Promptテンプレート</label>
         <select id="template-select"></select>
-        <label for="prompt-preview">生成Prompt（コピー前に編集できます）</label>
+        <label for="prompt-preview">生成Prompt</label>
         <textarea id="prompt-preview" rows="10" spellcheck="false"></textarea>
         <button id="copy-prompt-button" class="primary-button" type="button">
           Promptをコピー
